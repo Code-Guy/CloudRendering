@@ -41,8 +41,6 @@ ACloudRenderingGameModeBase::ACloudRenderingGameModeBase()
 
 	LandscapeSize = FVector2D(40000.0f, 30000.0f);
 	ContinuousSpan = 400.0f;
-	ViewBoundBoxHeight = 5000.0f;
-	ViewBoundBoxExtent = FVector(8000.0f, 6000.0f, 2000.0f);
 	ViewPitchRange = FVector2D(-60.0f, -15.0f);
 
 	DataPath = FString::Printf(TEXT("%sData"), *FPaths::ProjectContentDir());
@@ -89,11 +87,10 @@ void ACloudRenderingGameModeBase::BeginPlay()
 	};
 
 	// 查找已有的所有任务列表
-	TArray<FString> FoundDirectories;
-	IFileManager::Get().FindFiles(FoundDirectories, *FPaths::Combine(DataPath, TEXT("*")), false, true);
-	for (const FString& FoundDirectory : FoundDirectories)
+	TArray<FString> DirectoryNames = FindNonEmptyDirectoryNames();
+	for (const FString& DirectoryName : DirectoryNames)
 	{
-		LastTasks.Add(FoundDirectory);
+		LastTasks.Add(DirectoryName);
 	}
 
 	GetWorldTimerManager().SetTimer(PollTimerHandle, this, &ACloudRenderingGameModeBase::Poll, 1.0f, true);
@@ -138,14 +135,13 @@ void ACloudRenderingGameModeBase::EndPlay(const EEndPlayReason::Type EndPlayReas
 
 void ACloudRenderingGameModeBase::Poll()
 {
-	TArray<FString> FoundDirectories;
-	IFileManager::Get().FindFiles(FoundDirectories, *FPaths::Combine(DataPath, TEXT("*")), false, true);
-	for (const FString& FoundDirectory : FoundDirectories)
+	TArray<FString> DirectoryNames = FindNonEmptyDirectoryNames();
+	for (const FString& DirectoryName : DirectoryNames)
 	{
-		if (!LastTasks.Contains(FoundDirectory))
+		if (!LastTasks.Contains(DirectoryName))
 		{
-			LastTasks.Add(FoundDirectory);
-			TaskQueue.Enqueue(FoundDirectory);
+			LastTasks.Add(DirectoryName);
+			TaskQueue.Enqueue(DirectoryName);
 		}
 	}
 }
@@ -245,7 +241,7 @@ void ACloudRenderingGameModeBase::LoadBrush()
 			while (true)
 			{
 				float NextSplineLength = FMath::Min(SplineLength + ContinuousSpan, SplineComponent->GetSplineLength());
-				if (SplineComponent->GetSplineLength() - NextSplineLength < ContinuousSpan * 0.5f)
+				if (SplineComponent->GetSplineLength() - NextSplineLength < ContinuousSpan * 0.1f)
 				{
 					break;
 				}
@@ -268,21 +264,30 @@ void ACloudRenderingGameModeBase::LoadBrush()
 		}
 	}
 	SplineComponent->ConditionalBeginDestroy();
+
+	// 更新场景包围盒
+	BoundBox.Init();
+	for (AActor* Actor : Actors)
+	{
+		BoundBox += Actor->GetComponentsBoundingBox();
+	}
+
+	if (BoundBox.GetSize().X < 1000.0f || BoundBox.GetSize().Y < 1000.0f)
+	{
+		BoundBox = BoundBox.ExpandBy(BoundBox.GetSize() * 1.5f);
+	}
+	BoundBox.Min.Z = FMath::Max(BoundBox.Min.Z, 0.0f);
 }
 
 void ACloudRenderingGameModeBase::GenSnapshots(int Num)
 {
 	for (int i = 0; i < Num; ++i)
 	{
-		FVector Location = FVector(-14642.774414f, 15846.985352f, 17051.292969f);
-		FRotator Rotation = FRotator(-42.56190f, -47.129551f, 0.0f);
+		FVector Location = UKismetMathLibrary::RandomPointInBoundingBox(BoundBox.GetCenter(), BoundBox.GetExtent());
+		FVector Target = UKismetMathLibrary::RandomPointInBoundingBox(BoundBox.GetCenter(), BoundBox.GetExtent());
+		Target.Z = 0.0f;
 
-		if (i != 0)
-		{
-			Location = UKismetMathLibrary::RandomPointInBoundingBox(FVector(0.0f, 0.0f, ViewBoundBoxHeight), ViewBoundBoxExtent);
-			Rotation.Yaw = UKismetMathLibrary::RandomFloatInRange(-180.0f, 180.0f);
-			Rotation.Pitch = UKismetMathLibrary::RandomFloatInRange(ViewPitchRange.X, ViewPitchRange.Y);
-		}
+		FRotator Rotation = (Target - Location).Rotation();
 
 		SceneCapture->SetWorldLocationAndRotation(Location, Rotation);
 		SceneCapture->CaptureScene();
@@ -328,6 +333,23 @@ bool ACloudRenderingGameModeBase::ExportRenderTarget(class UTextureRenderTarget2
 		return FFileHelper::SaveArrayToFile(CompressedData, *FileName);
 	}
 	return false;
+}
+
+TArray<FString> ACloudRenderingGameModeBase::FindNonEmptyDirectoryNames()
+{
+	TArray<FString> FoundNonEmptyDirectoryNames;
+	TArray<FString> FoundDirectoryNames;
+	IFileManager::Get().FindFiles(FoundDirectoryNames, *FPaths::Combine(DataPath, TEXT("*")), false, true);
+	for (const FString& FoundDirectoryName : FoundDirectoryNames)
+	{
+		FString BrushFileName = FString::Printf(TEXT("%s/%s/brush.json"), *DataPath, *FoundDirectoryName);
+		if (FPaths::FileExists(BrushFileName))
+		{
+			FoundNonEmptyDirectoryNames.Add(FoundDirectoryName);
+		}
+	}
+
+	return FoundNonEmptyDirectoryNames;
 }
 
 FMeshRow* ACloudRenderingGameModeBase::GetRandomMeshRow(class UDataTable* DataTable)

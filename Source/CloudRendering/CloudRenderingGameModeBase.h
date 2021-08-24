@@ -45,15 +45,6 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Parameter")
 	float ContinuousSpan;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Parameter")
-	float ViewBoundBoxHeight;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Parameter")
-	FVector ViewBoundBoxExtent;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Parameter")
-	FVector2D ViewPitchRange;
-
 	UPROPERTY(EditDefaultsOnly, Category = "DataTable")
 	class UDataTable* TreeDataTable;
 
@@ -82,12 +73,13 @@ protected:
 
 private:
 	void Poll();
-
+	
 	void LoadBrush();
 	void GenSnapshots(int Num);
 	bool LoadJsonFile(const FString& JsonFilePath, TSharedPtr<FJsonObject>& RootJsonObject);
 	bool ExportRenderTarget(class UTextureRenderTarget2D* RenderTarget, const FString& FileName);
 	void Export(const FString& ExportPath);
+	TArray<FString> FindNonEmptyDirectoryNames();
 
 	FMeshRow* GetRandomMeshRow(class UDataTable* DataTable);
 	FVector GetParsedPos(const FString& PosStr);
@@ -102,6 +94,7 @@ private:
 	TMap<FString, class UDataTable*> DiscreteDataTableMap;
 	TMap<FString, class UDataTable*> ContinuousDataTableMap;
 	TArray<AActor*> Actors;
+	FBox BoundBox;
 
 	FString DataPath;
 	TArray<FString> LastTasks;
